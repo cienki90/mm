@@ -7,11 +7,19 @@ zestawienia (jak `ZESTAWIENIE PRZYKLAD 1 obliczenia.xls`).
 
 Wymagany tylko Python 3.8+ (bez dodatkowych bibliotek).
 
+**Wybór pliku po uruchomieniu:** uruchom `oblicz.bat` dwuklikiem (albo `python obliczenia.py`
+bez argumentów). Otworzy się okno wyboru pliku zestawienia, potem okno „Zapisz jako” dla
+wyniku (Anuluj = zapis obok pliku wejściowego). Na końcu pojawi się komunikat z wynikiem
+i ewentualnymi słupami do sprawdzenia. Gdy okna nie są dostępne (lub z opcją `--konsola`),
+program zapyta o ścieżkę w konsoli – można do niej przeciągnąć plik.
+
+Można też podać plik od razu:
+
 ```
 python obliczenia.py "ZESTAWIENIE PRZYKLAD 1 obliczenia.xls"
 ```
 
-W systemie Windows można też przeciągnąć plik zestawienia na `oblicz.bat`.
+albo przeciągnąć plik zestawienia na `oblicz.bat`.
 
 Wynik: `Obliczenia - <nazwa pliku>.xlsx` obok pliku wejściowego, z jedną zakładką na stację
 (np. `741`) oraz zakładką `zestawienie` (ilość słupów i długość linii, porównane z arkuszem

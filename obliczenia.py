@@ -858,33 +858,124 @@ def oblicz(wejscie, wyjscie=None, seed=None, kabel=DOMYSLNY_KABEL, cicho=False):
         base = os.path.splitext(os.path.basename(wejscie))[0]
         wyjscie = os.path.join(os.path.dirname(os.path.abspath(wejscie)), "Obliczenia - %s.xlsx" % base)
     arkusze = [arkusz_stacji(st) for st in stacje] + [arkusz_zestawienia(stacje, podsumowanie)]
-    zapisz_xlsx(wyjscie, arkusze)
+    try:
+        zapisz_xlsx(wyjscie, arkusze)
+    except PermissionError:
+        raise SystemExit("Nie można zapisać pliku (może jest otwarty w Excelu?):\n%s" % wyjscie)
+    raport = ["Wczytano: %s" % wejscie]
+    for st in stacje:
+        raport.append("  stacja %-10s obwody: %d  słupy: %3d  długość: %6s m"
+                      % (st.nazwa_arkusza, len(st.obwody), st.ilosc, _liczba_wynik(st.dlugosc)))
+        for s in st.slupy:
+            for p in s.problemy:
+                raport.append("    ! słup %s (obw. %s): %s" % (s.nr, s.obwod, p))
+        if st.nazwa_arkusza in podsumowanie:
+            il, dl = podsumowanie[st.nazwa_arkusza]
+            if (il is not None and int(il) != st.ilosc) or (dl is not None and abs(dl - st.dlugosc) > 1e-6):
+                raport.append("    ! niezgodność z arkuszem 'zestawienie': ilość %s, długość %s" % (
+                    _liczba_wynik(il), _liczba_wynik(dl)))
+    raport.append("Zapisano: %s" % wyjscie)
     if not cicho:
-        print("Wczytano: %s" % wejscie)
-        for st in stacje:
-            print("  stacja %-10s obwody: %d  słupy: %3d  długość: %6s m"
-                  % (st.nazwa_arkusza, len(st.obwody), st.ilosc, _liczba_wynik(st.dlugosc)))
-            for s in st.slupy:
-                for p in s.problemy:
-                    print("    ! słup %s (obw. %s): %s" % (s.nr, s.obwod, p))
-            if st.nazwa_arkusza in podsumowanie:
-                il, dl = podsumowanie[st.nazwa_arkusza]
-                if (il is not None and int(il) != st.ilosc) or (dl is not None and abs(dl - st.dlugosc) > 1e-6):
-                    print("    ! niezgodność z arkuszem 'zestawienie': ilość %s, długość %s" % (
-                        _liczba_wynik(il), _liczba_wynik(dl)))
-        print("Zapisano: %s" % wyjscie)
-    return wyjscie, stacje
+        print("\n".join(raport))
+    return wyjscie, stacje, raport
+
+
+# ---------------------------------------------------------------------------
+# WYBÓR PLIKU PO URUCHOMIENIU
+# ---------------------------------------------------------------------------
+
+_TYPY_WEJSCIA = [("Pliki Excel", "*.xls *.xlsx"), ("Wszystkie pliki", "*.*")]
+
+
+def _tk():
+    """Zwraca (tkinter, okno główne) lub None, gdy okna nie są dostępne."""
+    try:
+        import tkinter
+        from tkinter import filedialog, messagebox  # noqa: F401
+        root = tkinter.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        return tkinter, root
+    except Exception:
+        return None
+
+
+def wybierz_plik_okno(tk):
+    from tkinter import filedialog
+    tkinter, root = tk
+    wejscie = filedialog.askopenfilename(parent=root, title="Wybierz plik ZESTAWIENIE",
+                                         filetypes=_TYPY_WEJSCIA)
+    if not wejscie:
+        return None, None
+    base = os.path.splitext(os.path.basename(wejscie))[0]
+    wyjscie = filedialog.asksaveasfilename(parent=root, title="Zapisz obliczenia jako",
+                                           initialdir=os.path.dirname(wejscie),
+                                           initialfile="Obliczenia - %s.xlsx" % base,
+                                           defaultextension=".xlsx",
+                                           filetypes=[("Plik Excel", "*.xlsx")])
+    return wejscie, (wyjscie or None)
+
+
+def wybierz_plik_konsola():
+    print("Podaj ścieżkę do pliku ZESTAWIENIE (.xls / .xlsx) - można przeciągnąć plik do tego okna.")
+    while True:
+        try:
+            wejscie = input("Plik: ").strip().strip('"').strip("'")
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if not wejscie:
+            return None
+        if os.path.isfile(wejscie):
+            return wejscie
+        print("Nie znaleziono pliku: %s (Enter = zakończ)" % wejscie)
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Obliczenia słupów linii nN na podstawie pliku ZESTAWIENIE (.xls/.xlsx)")
-    p.add_argument("wejscie", help="plik zestawienia, np. 'ZESTAWIENIE PRZYKLAD 1 obliczenia.xls'")
+    p = argparse.ArgumentParser(description="Obliczenia słupów linii nN na podstawie pliku ZESTAWIENIE (.xls/.xlsx). "
+                                            "Bez podania pliku program otworzy okno wyboru pliku.")
+    p.add_argument("wejscie", nargs="?", help="plik zestawienia, np. 'ZESTAWIENIE PRZYKLAD 1 obliczenia.xls'")
     p.add_argument("-o", "--wyjscie", help="plik wynikowy .xlsx (domyślnie 'Obliczenia - <nazwa>.xlsx')")
     p.add_argument("--seed", type=int, help="ziarno losowania kątów słupów narożnych (powtarzalny wynik)")
     p.add_argument("--kabel", type=int, default=DOMYSLNY_KABEL,
                    help="domyślny rodzaj kabla 1-11 (domyślnie %d = %s)" % (DOMYSLNY_KABEL, KABLE[DOMYSLNY_KABEL]))
+    p.add_argument("--konsola", action="store_true", help="pytaj o plik w konsoli zamiast w oknie")
     a = p.parse_args(argv)
-    oblicz(a.wejscie, a.wyjscie, a.seed, a.kabel)
+
+    if a.wejscie:
+        oblicz(a.wejscie, a.wyjscie, a.seed, a.kabel)
+        return
+
+    tk = None if a.konsola else _tk()
+    if tk is None:
+        wejscie = wybierz_plik_konsola()
+        if not wejscie:
+            print("Nie wybrano pliku.")
+            return
+        oblicz(wejscie, a.wyjscie, a.seed, a.kabel)
+        return
+
+    from tkinter import messagebox
+    root = tk[1]
+    wejscie, wyjscie = wybierz_plik_okno(tk)
+    if not wejscie:
+        root.destroy()
+        return
+    try:
+        _, _, raport = oblicz(wejscie, a.wyjscie or wyjscie, a.seed, a.kabel)
+        uwagi = [r.strip() for r in raport if r.strip().startswith("!")]
+        tekst = raport[-1]
+        if uwagi:
+            tekst += "\n\nDo sprawdzenia:\n" + "\n".join(uwagi[:20]) + \
+                     ("\n... (%d więcej)" % (len(uwagi) - 20) if len(uwagi) > 20 else "")
+            messagebox.showwarning("Obliczenia", tekst, parent=root)
+        else:
+            messagebox.showinfo("Obliczenia", tekst, parent=root)
+    except SystemExit as e:
+        messagebox.showerror("Obliczenia", str(e), parent=root)
+    except Exception as e:
+        messagebox.showerror("Obliczenia", "Błąd podczas obliczeń:\n%s" % e, parent=root)
+    finally:
+        root.destroy()
 
 
 if __name__ == "__main__":
