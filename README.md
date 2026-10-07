@@ -21,17 +21,18 @@ python zestawienie_dxf.py                                  # okno wyboru plików
 
 | Dane | Skąd w DXF |
 |---|---|
-| Oznaczenie i typ słupa | odnośnik (MULTILEADER) `słup nN` / `P-10/ZN` – grot wskazuje słup |
+| Oznaczenie i typ słupa | odnośnik (MULTILEADER) `słup nN` / `P-10/ZN` – grot wskazuje słup; także bloki z wbudowanym opisem (np. `q` = P-10/ZN, `e2` = -10,5/10/E – brak oznaczenia → `P`) |
 | Numer słupa | tekst `1`, `2`, `2.1`, … najbliższy słupowi |
 | Odległość | wymiar (DIMENSION) między słupem a słupem poprzednim; pierwsze przęsło od stacji = połowa wymiaru między słupem nr 1 a kolejnym słupem |
 | Stacja | odnośnik `STACJA TRAFO` / `05-0497` |
-| Zakres stacji | zamknięte polilinie na warstwie `!trafo` |
+| Zakres stacji | zamknięte polilinie na warstwie `!trafo` lub `!trafo_<nr stacji>` (np. `!trafo_05-0181` – nazwa stacji brana z warstwy) |
+| Mufa | blok `mufa` (lub blok/warstwa zawierająca „muf”) przy słupie – w kolumnie Mufa wpisywane jest 1 |
 | Obwód | odnośnik `obw. nr X` najbliższy słupowi nr 1 obwodu |
 
 Kolejność wierszy: obwód, potem numer słupa (1, 2, 2.1, 2.2, …, 3).
 
 ## Ograniczenia
 
-* **Mufa** – w rysunku nie ma informacji o mufach, kolumna zostaje pusta do uzupełnienia.
+* Słupy bez numerów są pomijane (informacja w arkuszu uwagi, np. stacja bez numeracji).
 * Zakres stacji bez opisu `STACJA TRAFO` dostaje nazwę `obszar_N` – zmień ją ręcznie.
 * Tylko DXF w formacie ASCII.

@@ -37,7 +37,9 @@ TOL_NUMER = 15.0                 # [m] maks. odległość numeru od słupa
 TOL_DUPLIKAT = 1.0               # [m] opisy słupów bliżej niż to = ten sam słup
 TOL_STACJA = 150.0               # [m] słup nr 1 poza zakresem -> najbliższa stacja
 
-RE_SLUP = re.compile(r's[łl]up\s*nN\s*\n\s*([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)\s*(-.+?)\s*$', re.I | re.S)
+RE_SLUP = re.compile(r's[łl]up\s*nN\s*\n\s*([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]*)\s*(-.+?)\s*$', re.I | re.S)
+TOL_MUFA = 5.0                   # [m] maks. odległość bloku mufy od słupa
+DOMYSLNE_OZNACZENIE = 'P'        # gdy opis słupu nie ma oznaczenia (np. "słup nN / -10,5/10/E")
 RE_STACJA = re.compile(r'STACJA\s+TRAFO\s*\n\s*(\S+)', re.I)
 RE_OBWOD = re.compile(r'obw\.?\s*nr\s*(\d+)', re.I)
 RE_NUMER = re.compile(r'^\d+(\.\d+)*$')
@@ -67,14 +69,18 @@ def czytaj_grupy(sciezka):
 
 
 def encje(sciezka):
-    """Zwraca listę (typ, [(kod, wartość), ...]) z sekcji ENTITIES."""
-    wynik, sekcja, biez = [], None, None
+    """Zwraca (encje, bloki):
+    encje - lista (typ, [(kod, wartość), ...]) z sekcji ENTITIES,
+    bloki - słownik nazwa_bloku -> lista encji w definicji bloku."""
+    wynik, bloki, sekcja, biez = [], {}, None, None
+    blok, naglowek_bloku = None, None
     poprz_section = False
     for kod, wart in czytaj_grupy(sciezka):
         if kod == 0:
             if biez is not None:
-                wynik.append(biez)
+                (wynik if sekcja == 'ENTITIES' else bloki.setdefault(blok, [])).append(biez)
                 biez = None
+            naglowek_bloku = None
             if wart == 'SECTION':
                 poprz_section = True
                 continue
@@ -82,14 +88,41 @@ def encje(sciezka):
                 sekcja = None
             elif sekcja == 'ENTITIES':
                 biez = (wart, [])
+            elif sekcja == 'BLOCKS':
+                if wart == 'BLOCK':
+                    naglowek_bloku = True
+                elif wart == 'ENDBLK':
+                    blok = None
+                elif blok is not None:
+                    biez = (wart, [])
         elif kod == 2 and poprz_section:
             sekcja = wart
+        elif naglowek_bloku and kod == 2:
+            blok = wart
+            bloki.setdefault(blok, [])
         elif biez is not None:
             biez[1].append((kod, wart))
         poprz_section = False
-    if biez is not None:
+    if biez is not None and sekcja == 'ENTITIES':
         wynik.append(biez)
-    return wynik
+    return wynik, bloki
+
+
+def opis_multileadera(g):
+    """(tekst, grot) z encji MULTILEADER."""
+    d = dict(g)
+    txt = next((v for k, v in g if k == 304 and not v.endswith('{')), None)
+    p = None
+    for n, (k, v) in enumerate(g):
+        if k == 304 and v == 'LEADER_LINE{':
+            try:
+                p = (float(g[n + 1][1]), float(g[n + 2][1]))
+            except (IndexError, ValueError):
+                pass
+            break
+    if p is None:
+        p = (fl(d, 10), fl(d, 20))
+    return txt, p
 
 
 def czysc_mtext(s):
@@ -116,28 +149,52 @@ class Rysunek:
         self.teksty = []     # (tekst, punkt)
         self.wymiary = []    # (dlugosc, p1, p2)
         self.zakresy = []    # [punkty]
+        self.nazwy_zakresow = []  # numer stacji z nazwy warstwy (np. '!trafo_05-0181') lub None
+        self.mufy = []       # punkty wstawienia bloków mufy
         self.uwagi = []
         self._wczytaj()
 
     def _wczytaj(self):
-        for typ, g in encje(self.sciezka):
+        lista, bloki = encje(self.sciezka)
+        # bloki zawierające opis słupu (np. 'q' = słup ZN z opisem P-10/ZN)
+        bloki_slupy, bloki_mufy = {}, set()
+        for nazwa, ents in bloki.items():
+            if nazwa is None or nazwa.startswith('*'):
+                continue
+            for typ, g in ents:
+                if typ == 'MULTILEADER':
+                    txt, p = opis_multileadera(g)
+                elif typ in ('MTEXT', 'TEXT'):
+                    d = dict(g)
+                    txt, p = ''.join(v for k, v in g if k == 3) + d.get(1, ''), (fl(d, 10), fl(d, 20))
+                else:
+                    continue
+                if txt and RE_SLUP.search(czysc_mtext(txt)):
+                    bloki_slupy[nazwa] = (czysc_mtext(txt), p)
+                    break
+            warstwy = {dict(g).get(8, '') for _, g in ents}
+            if 'muf' in nazwa.lower() or (warstwy and all('muf' in w.lower() for w in warstwy)):
+                bloki_mufy.add(nazwa)
+
+        for typ, g in lista:
             d = dict(g)
             warstwa = d.get(8, '')
-            if typ == 'MULTILEADER':
-                txt = next((v for k, v in g if k == 304 and not v.endswith('{')), None)
+            if typ == 'INSERT':
+                nazwa = d.get(2, '')
+                ip = (fl(d, 10), fl(d, 20))
+                if nazwa in bloki_mufy or 'muf' in warstwa.lower():
+                    self.mufy.append(ip)
+                elif nazwa in bloki_slupy:
+                    txt, (bx, by) = bloki_slupy[nazwa]
+                    sx, sy = fl(d, 41, 1.0), fl(d, 42, 1.0)
+                    a = math.radians(fl(d, 50))
+                    x, y = bx * sx, by * sy
+                    p = (ip[0] + x * math.cos(a) - y * math.sin(a), ip[1] + x * math.sin(a) + y * math.cos(a))
+                    self.opisy.append((txt, p))
+            elif typ == 'MULTILEADER':
+                txt, p = opis_multileadera(g)
                 if txt is None:
                     continue
-                # grot odnośnika = pierwszy wierzchołek LEADER_LINE
-                p = None
-                for n, (k, v) in enumerate(g):
-                    if k == 304 and v == 'LEADER_LINE{':
-                        try:
-                            p = (float(g[n + 1][1]), float(g[n + 2][1]))
-                        except (IndexError, ValueError):
-                            pass
-                        break
-                if p is None:
-                    p = (fl(d, 10), fl(d, 20))
                 self.opisy.append((czysc_mtext(txt), p))
             elif typ in ('TEXT', 'MTEXT'):
                 txt = ''.join(v for k, v in g if k == 3) + d.get(1, '')
@@ -152,11 +209,13 @@ class Rysunek:
                     p1, p2 = (fl(d, 13), fl(d, 23)), (fl(d, 14), fl(d, 24))
                     L = fl(d, 42, math.dist(p1, p2))
                     self.wymiary.append((L, p1, p2))
-            elif typ == 'LWPOLYLINE' and warstwa.lower() == WARSTWA_ZAKRESOW.lower():
+            elif typ == 'LWPOLYLINE' and warstwa.lower().startswith(WARSTWA_ZAKRESOW.lower()):
                 xs = [float(v) for k, v in g if k == 10]
                 ys = [float(v) for k, v in g if k == 20]
                 if len(xs) >= 3:
                     self.zakresy.append(list(zip(xs, ys)))
+                    reszta = warstwa[len(WARSTWA_ZAKRESOW):].strip(' _-')
+                    self.nazwy_zakresow.append(reszta or None)
 
 
 def w_wielokacie(pt, poly):
@@ -191,7 +250,8 @@ def zbuduj(rys):
                 uw.append('Zdublowany opis słupu "%s" w punkcie (%.2f, %.2f) - pominięto.' % (txt.replace('\n', ' '), *p))
                 continue
             typ = m.group(2).replace(',', '.').replace(' ', '')
-            slupy.append({'oz': m.group(1), 'typ': typ, 'p': p})
+            oz = m.group(1) or DOMYSLNE_OZNACZENIE
+            slupy.append({'oz': oz, 'typ': typ, 'p': p, 'bez_oz': not m.group(1)})
             continue
         m = RE_STACJA.search(txt)
         if m:
@@ -202,7 +262,7 @@ def zbuduj(rys):
             obwody.append((int(m.group(1)), p))
 
     # ---------- obszary
-    zakres_stacji = {}
+    zakres_stacji = {k: n for k, n in enumerate(rys.nazwy_zakresow) if n}
     for s in stacje:
         s['obszar'] = next((k for k, A in enumerate(rys.zakresy) if w_wielokacie(s['p'], A)), None)
         if s['obszar'] is not None:
@@ -241,11 +301,41 @@ def zbuduj(rys):
     for i, (t, tp) in enumerate(rys.teksty):
         if i not in przyp:
             uw.append('Numer "%s" (%.2f, %.2f) nie został przypisany do żadnego słupu.' % (t, *tp))
+    bez_nr = collections.defaultdict(list)
     for s in slupy:
         if 'nr' not in s:
-            uw.append('Słup %s%s (%.2f, %.2f) nie ma numeru - pominięto w zestawieniu.' % (s['oz'], s['typ'], *s['p']))
+            bez_nr[s['obszar']].append(s)
+    for ob, lst in bez_nr.items():
+        if ob is None and rys.zakresy:
+            uw.append('%d słup(y) bez numeru poza zakresami stacji (np. legenda) - pominięto.' % len(lst))
+            continue
+        nazwa = zakres_stacji.get(ob, 'obszar_%d' % (ob + 1) if ob is not None else '')
+        if len(lst) > 3:
+            uw.append('Stacja %s: %d słupów bez numerów - pominięto (ponumeruj słupy na rysunku).' % (nazwa, len(lst)))
+        else:
+            for s in lst:
+                uw.append('Słup %s%s (%.2f, %.2f) nie ma numeru - pominięto w zestawieniu.' % (s['oz'], s['typ'], *s['p']))
 
     num = [i for i, s in enumerate(slupy) if 'nr' in s]
+    for i in num:
+        if slupy[i]['bez_oz']:
+            uw.append('Słup nr %s (%.2f, %.2f): opis bez oznaczenia (np. "słup nN / -10,5/10/E") - przyjęto "%s".'
+                      % (slupy[i]['nr'], *slupy[i]['p'], DOMYSLNE_OZNACZENIE))
+
+    # ---------- mufy (blok mufy przy słupie -> 1 w kolumnie Mufa)
+    for mp in rys.mufy:
+        if not slupy:
+            break
+        d, j = min((math.dist(mp, s['p']), j) for j, s in enumerate(slupy))
+        if d > TOL_MUFA:
+            uw.append('Mufa (%.2f, %.2f) nie leży przy żadnym słupie (najbliższy %.1f m) - pominięto.' % (*mp, d))
+            continue
+        if 'nr' not in slupy[j]:
+            uw.append('Mufa (%.2f, %.2f) leży przy słupie bez numeru - pominięto.' % mp)
+            continue
+        if slupy[j].get('mufa'):
+            uw.append('Słup nr %s (%.2f, %.2f): więcej niż jedna mufa - wpisano 1.' % (slupy[j]['nr'], *slupy[j]['p']))
+        slupy[j]['mufa'] = 1
 
     # ---------- graf przęseł z wymiarów
     sasiad = collections.defaultdict(set)
@@ -274,7 +364,7 @@ def zbuduj(rys):
             continue
         kand = [j for j in num if slupy[j]['nr'] == pn]
         anc = [j for j in sasiad[i] if klucz(slupy[j]['nr']) < klucz(nr) and j not in kand]
-        if not kand:
+        if not kand and anc:
             kand = anc
         if not kand:
             P['rodzic'] = None
@@ -397,16 +487,23 @@ def zbuduj(rys):
                 n = min(set(range(1, 100)) - uzyte)
                 obw[r] = n
                 uzyte.add(n)
-                uw.append('Stacja %s: nie rozpoznano opisu obwodu dla słupa nr 1 (%.2f, %.2f) - przyjęto obwód %d.'
-                          % (st, *slupy[r]['p'], n))
+                if len(korzenie) > 1:
+                    uw.append('Stacja %s: nie rozpoznano opisu obwodu dla słupa nr 1 (%.2f, %.2f) - przyjęto obwód %d.'
+                              % (st, *slupy[r]['p'], n))
         if len([n for n, p in ob]) != len(set(n for n, p in ob)):
             uw.append('Stacja %s: powtórzony numer obwodu w opisach "obw. nr" - sprawdź przypisanie obwodów.' % st)
         wiersze = []
         for i in ids:
             P = slupy[i]
             wiersze.append({'nr': P['nr'], 'oz': P['oz'], 'typ': P['typ'], 'odl': P['odl'],
-                            'mufa': None, 'obw': obw[korzen(i)]})
+                            'mufa': P.get('mufa'), 'obw': obw[korzen(i)]})
         wiersze.sort(key=lambda w: (w['obw'], klucz(w['nr'])))
+        nr_w_obw = {(w['obw'], w['nr']) for w in wiersze}
+        for w in wiersze:
+            pn = nr_rodzica(w['nr'])
+            if pn and (w['obw'], pn) not in nr_w_obw:
+                uw.append('Stacja %s, obwód %d: jest słup nr %s, a brak słupa nr %s (luka w numeracji?).'
+                          % (st, w['obw'], w['nr'], pn))
         wynik[st] = wiersze
     return wynik
 
