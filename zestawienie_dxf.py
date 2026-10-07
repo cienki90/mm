@@ -638,23 +638,95 @@ def przetworz(dxf, wyjscie=None):
 
 
 def gui():
+    """Okno: wybór pliku DXF, wybór miejsca zapisu, przycisk 'Utwórz zestawienie'."""
     import tkinter as tk
-    from tkinter import filedialog, messagebox
-    root = tk.Tk()
-    root.withdraw()
-    pliki = filedialog.askopenfilenames(title='Wybierz pliki DXF', filetypes=[('Rysunki DXF', '*.dxf'), ('Wszystkie', '*.*')])
-    if not pliki:
-        return
-    wyniki = []
-    for p in pliki:
+    from tkinter import filedialog, messagebox, scrolledtext
+
+    okno = tk.Tk()
+    okno.title('Zestawienie słupów nN z DXF')
+    okno.resizable(True, True)
+    wej = tk.StringVar()
+    wyj = tk.StringVar()
+
+    def domyslne_wyjscie(dxf):
+        return os.path.join(os.path.dirname(os.path.abspath(dxf)),
+                            'zestawienie ' + os.path.splitext(os.path.basename(dxf))[0] + '.xlsx')
+
+    def wybierz_dxf():
+        p = filedialog.askopenfilename(parent=okno, title='Wskaż plik DXF',
+                                       filetypes=[('Rysunki DXF', '*.dxf'), ('Wszystkie pliki', '*.*')])
+        if p:
+            wej.set(os.path.normpath(p))
+            if not wyj.get():
+                wyj.set(os.path.normpath(domyslne_wyjscie(p)))
+
+    def wybierz_xlsx():
+        start = wyj.get() or (domyslne_wyjscie(wej.get()) if wej.get() else '')
+        p = filedialog.asksaveasfilename(parent=okno, title='Gdzie zapisać zestawienie',
+                                         defaultextension='.xlsx',
+                                         initialdir=os.path.dirname(start) if start else None,
+                                         initialfile=os.path.basename(start) if start else 'zestawienie.xlsx',
+                                         filetypes=[('Skoroszyt Excel', '*.xlsx')])
+        if p:
+            wyj.set(os.path.normpath(p))
+
+    def log(t):
+        pole.configure(state='normal')
+        pole.insert('end', t + '\n')
+        pole.see('end')
+        pole.configure(state='disabled')
+
+    def utworz():
+        dxf, xlsx = wej.get().strip(), wyj.get().strip()
+        if not dxf or not os.path.isfile(dxf):
+            messagebox.showwarning('Brak pliku', 'Wskaż istniejący plik DXF.', parent=okno)
+            return
+        if not xlsx:
+            messagebox.showwarning('Brak miejsca zapisu', 'Wskaż, gdzie zapisać zestawienie.', parent=okno)
+            return
+        if not xlsx.lower().endswith('.xlsx'):
+            xlsx += '.xlsx'
+            wyj.set(xlsx)
+        okno.config(cursor='watch')
+        okno.update()
         try:
-            wyniki.append(przetworz(p))
+            log(przetworz(dxf, xlsx))
+            log('')
+            if messagebox.askyesno('Gotowe', 'Zapisano zestawienie:\n%s\n\nOtworzyć plik?' % xlsx, parent=okno):
+                try:
+                    os.startfile(xlsx)  # Windows
+                except AttributeError:
+                    pass
+        except PermissionError:
+            messagebox.showerror('Błąd zapisu', 'Nie można zapisać pliku:\n%s\n\nCzy jest otwarty w Excelu?' % xlsx, parent=okno)
         except Exception as e:  # noqa
-            wyniki.append('%s: BŁĄD - %s' % (os.path.basename(p), e))
-    messagebox.showinfo('Zestawienie DXF', '\n\n'.join(wyniki))
+            log('BŁĄD: %s' % e)
+            messagebox.showerror('Błąd', str(e), parent=okno)
+        finally:
+            okno.config(cursor='')
+
+    r = dict(padx=6, pady=4)
+    tk.Label(okno, text='Plik DXF (dane):').grid(row=0, column=0, sticky='w', **r)
+    tk.Entry(okno, textvariable=wej, width=70).grid(row=0, column=1, sticky='we', **r)
+    tk.Button(okno, text='Wybierz…', command=wybierz_dxf).grid(row=0, column=2, **r)
+    tk.Label(okno, text='Zapisz zestawienie jako:').grid(row=1, column=0, sticky='w', **r)
+    tk.Entry(okno, textvariable=wyj, width=70).grid(row=1, column=1, sticky='we', **r)
+    tk.Button(okno, text='Wybierz…', command=wybierz_xlsx).grid(row=1, column=2, **r)
+    tk.Button(okno, text='Utwórz zestawienie', command=utworz, font=('TkDefaultFont', 10, 'bold'),
+              padx=12, pady=4).grid(row=2, column=0, columnspan=3, pady=8)
+    pole = scrolledtext.ScrolledText(okno, width=90, height=16, state='disabled', font=('Consolas', 9))
+    pole.grid(row=3, column=0, columnspan=3, sticky='nsew', **r)
+    okno.columnconfigure(1, weight=1)
+    okno.rowconfigure(3, weight=1)
+    okno.mainloop()
 
 
 def main():
+    # w EXE bez konsoli (--windowed) stdout/stderr nie istnieją
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, 'w')
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, 'w')
     ap = argparse.ArgumentParser(description='Zestawienie słupów nN z plików DXF do Excela (.xlsx).')
     ap.add_argument('dxf', nargs='*', help='plik(i) DXF')
     ap.add_argument('-o', '--wyjscie', help='plik wynikowy .xlsx (tylko przy jednym pliku DXF)')

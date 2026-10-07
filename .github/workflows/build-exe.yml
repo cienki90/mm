@@ -1,0 +1,56 @@
+name: Budowa pliku EXE
+
+on:
+  push:
+    branches: [main, zestawienie-dxf]
+    paths: ['zestawienie_dxf.py', '.github/workflows/build-exe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalacja PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Test na plikach przykładowych
+        shell: bash
+        run: |
+          python zestawienie_dxf.py "przyklad 1.dxf" -o test1.xlsx
+          if [ -f pw.dxf ]; then python zestawienie_dxf.py pw.dxf -o test2.xlsx; fi
+
+      - name: Budowa EXE
+        run: python -m PyInstaller --onefile --windowed --name ZestawienieDXF zestawienie_dxf.py
+
+      - name: Test EXE (tryb wiersza poleceń)
+        shell: bash
+        run: |
+          ./dist/ZestawienieDXF.exe "przyklad 1.dxf" -o test_exe.xlsx
+          test -s test_exe.xlsx
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZestawienieDXF
+          path: dist/ZestawienieDXF.exe
+
+      - name: Publikacja w Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: exe-latest
+          name: ZestawienieDXF.exe (najnowsza wersja)
+          prerelease: false
+          make_latest: true
+          body: |
+            Program do tworzenia zestawień słupów nN z plików DXF.
+            Pobierz ZestawienieDXF.exe, uruchom, wskaż plik DXF i miejsce zapisu zestawienia.
+            Zbudowano z commita ${{ github.sha }}.
+          files: dist/ZestawienieDXF.exe
