@@ -727,6 +727,12 @@ def main():
         sys.stdout = open(os.devnull, 'w')
     if sys.stderr is None:
         sys.stderr = open(os.devnull, 'w')
+    # konsola/potok Windows (cp1252) nie zna polskich znaków - nie przerywaj z ich powodu
+    for strumien in (sys.stdout, sys.stderr):
+        try:
+            strumien.reconfigure(errors='replace')
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description='Zestawienie słupów nN z plików DXF do Excela (.xlsx).')
     ap.add_argument('dxf', nargs='*', help='plik(i) DXF')
     ap.add_argument('-o', '--wyjscie', help='plik wynikowy .xlsx (tylko przy jednym pliku DXF)')
