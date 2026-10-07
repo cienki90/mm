@@ -4,7 +4,8 @@
 
 * arkusz **zestawienie** – stacja / ilość / długość (+ wiersz RAZEM, formuły),
 * osobny arkusz dla każdej stacji – Nr słupa, Oznaczenie, Typ, Odległość, Mufa, Obwód,
-* arkusz **uwagi** – miejsca w rysunku, które warto sprawdzić ręcznie.
+* arkusz **kontrola** – wynik automatycznego sprawdzenia zestawienia (poziom, stacja, obwód, nr słupa, opis, współrzędne X/Y),
+* w arkuszach stacji kolumna **Kontrola**; wiersze z błędem są czerwone, z uwagą – żółte; w arkuszu *zestawienie* kolumna *kontrola* (OK / liczba błędów i uwag).
 
 ## Program EXE (Windows)
 
@@ -42,6 +43,24 @@ python zestawienie_dxf.py                                  # okno wyboru plików
 | Obwód | odnośnik `obw. nr X` najbliższy słupowi nr 1 obwodu |
 
 Kolejność wierszy: obwód, potem numer słupa (1, 2, 2.1, 2.2, …, 3).
+
+## Kontrola poprawności
+
+Po zbudowaniu zestawienia program sprawdza je z rysunkiem. **BŁĄD** = wynik może być zły (program musiał zgadywać albo dane są sprzeczne), **UWAGA** = nietypowe, warto zerknąć, **INFO** = informacyjnie.
+
+| Sprawdzenie | Poziom |
+|---|---|
+| słup w zakresie stacji A, a w zestawieniu w stacji B; przęsło przechodzące między zakresami stacji | BŁĄD |
+| przęsło bez wymiaru (odległość zmierzona z rysunku lub z podziału wymiaru) | BŁĄD |
+| wymiar między słupami tej samej stacji, który nie jest przęsłem w zestawieniu | BŁĄD |
+| wymiar do słupa innej stacji przy słupie, który nie ma wymiaru do swojego poprzednika | BŁĄD |
+| połączenie niezgodne z numeracją (np. 15.1 zaczepiony wymiarem do 11), luka w numeracji, powtórzony numer | BŁĄD |
+| słup nr 2 bliżej stacji niż słup nr 1 (zamienione numery) | BŁĄD |
+| słupy bez numerów w zakresie stacji, stacja bez słupów, zakres bez opisu stacji, mufa daleko od słupa | BŁĄD |
+| wymiar między słupami różnych stacji (nie wliczony), wymiar niezaczepiony o słup, tekst wymiaru wpisany ręcznie | UWAGA |
+| przęsło > 70 m lub < 5 m, słup końcowy (K…) z kolejnym słupem, brak opisu „obw. nr”, zdublowany opis | UWAGA |
+
+Skuteczność sprawdzono, psując celowo rysunki przykładowe (usuwanie wymiarów, zamiana i zmiana numerów słupów – 500 prób): każda zmiana wyniku była zgłoszona, poza usunięciem wymiaru między słupami nr 1 dwóch obwodów (program nie ma wtedy z czym porównać odległości pierwszych przęseł) i zamianą numerów 1↔2 w zakresie bez opisu stacji.
 
 ## Ograniczenia
 
