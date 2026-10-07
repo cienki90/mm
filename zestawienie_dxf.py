@@ -363,14 +363,19 @@ def zbuduj(rys):
             P['rodzic'] = None
             continue
         kand = [j for j in num if slupy[j]['nr'] == pn]
+        wlasny_ma_stacje = P['obszar'] in zakres_stacji
         anc = [j for j in sasiad[i] if klucz(slupy[j]['nr']) < klucz(nr) and j not in kand]
+        if wlasny_ma_stacje:
+            # słup leży w zakresie stacji -> nie łącz go ze słupem z zakresu innej stacji
+            anc = [j for j in anc if slupy[j]['obszar'] == P['obszar']]
+            if any(slupy[c]['obszar'] == P['obszar'] for c in kand):
+                kand = [c for c in kand if slupy[c]['obszar'] == P['obszar']]
         if not kand and anc:
             kand = anc
         if not kand:
             P['rodzic'] = None
             uw.append('Słup nr %s (%.2f, %.2f): nie znaleziono słupa poprzedniego (%s).' % (nr, *P['p'], pn))
             continue
-        wlasny_ma_stacje = P['obszar'] in zakres_stacji
 
         def ocena(j):
             return (slupy[j]['obszar'] != P['obszar'] and wlasny_ma_stacje,
@@ -469,6 +474,7 @@ def zbuduj(rys):
     for i in num:
         grupy[slupy[korzen(i)]['stacja']].append(i)
 
+    rys._slupy, rys._sasiad = slupy, sasiad  # do diagnostyki
     wynik = {}
     for st, ids in grupy.items():
         korzenie = [i for i in ids if slupy[i]['rodzic'] is None]
