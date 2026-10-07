@@ -6,7 +6,19 @@
 * osobny arkusz dla każdej stacji – Nr słupa, Oznaczenie, Typ, Odległość, Mufa, Obwód,
 * arkusz **uwagi** – miejsca w rysunku, które warto sprawdzić ręcznie.
 
-## Uruchomienie
+## Program EXE (Windows)
+
+Pobierz **[ZestawienieDXF.exe](https://github.com/cienki90/mm/releases/download/exe-latest/ZestawienieDXF.exe)** (nie wymaga instalacji ani Pythona) i uruchom:
+
+1. **Plik DXF (dane)** → *Wybierz…* – wskaż rysunek DXF,
+2. **Zapisz zestawienie jako** → *Wybierz…* – wskaż folder i nazwę pliku `.xlsx`
+   (domyślnie podpowiadane: `zestawienie <nazwa DXF>.xlsx` obok rysunku),
+3. **Utwórz zestawienie** – w oknie pojawi się podsumowanie stacji, a program zaproponuje otwarcie pliku.
+
+EXE budowany jest automatycznie (GitHub Actions) po każdej zmianie `zestawienie_dxf.py`.
+Przy pierwszym uruchomieniu Windows SmartScreen może pokazać ostrzeżenie – *Więcej informacji → Uruchom mimo to*.
+
+## Uruchomienie ze skryptu Python
 
 Wymagany tylko Python 3.8+ (bez dodatkowych bibliotek).
 
